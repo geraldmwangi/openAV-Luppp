@@ -182,7 +182,7 @@ static void gui_header_callback(Fl_Widget *w, void *data)
 	} else if ( strcmp(m->label(), "Save Session   ") == 0 ) {
 		const string projectsDir = gui->getProjectsDir();
 		string prompt = "Save session as " + projectsDir;
-		const char* name = fl_input( prompt.c_str(), gui->getDiskWriter()->getLastSaveName().c_str() );
+		const char* name = fl_input( "%s", gui->getDiskWriter()->getLastSaveName().c_str(), prompt.c_str() );
 		if ( name ) {
 			gui->getDiskWriter()->initialize( projectsDir, name );
 			LUPPP_NOTE("%s %s","Saving session as ", name );
