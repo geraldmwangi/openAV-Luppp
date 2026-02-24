@@ -1,0 +1,50 @@
+sudo: required
+language: cpp
+dist: xenial
+compiler:
+- gcc
+os:
+- linux
+env:
+  - UPLOADTOOL_SUFFIX=$TRAVIS_BRANCH
+addons:
+  apt:
+    sources:
+      - sourceline: deb http://archive.ubuntu.com/ubuntu xenial-backports universe
+    packages:
+      - libjpeg-dev
+      - libsndfile1-dev
+      - libsigc++-2.0-dev
+      - libfontconfig1-dev
+      - libxft-dev
+      - libcairo-dev
+      - python3-pip
+      - python3-setuptools
+      - python3-wheel
+      - liblo-dev
+      - libjack-dev
+      - libsamplerate0-dev
+      - ninja-build/xenial-backports
+install:
+- git clone git://git.tuxfamily.org/gitroot/non/fltk.git ntk
+- cd ntk && sudo ./waf configure build install && cd ..
+- pip3 install meson
+script:
+- meson --prefix /usr build
+- ninja -C build
+- ninja -C build test
+- DESTDIR=./appdir ninja -C build install ; find ./build/appdir
+- wget -c -nv "https://github.com/probonopd/linuxdeployqt/releases/download/continuous/linuxdeployqt-continuous-x86_64.AppImage"
+- chmod a+x linuxdeployqt-continuous-x86_64.AppImage
+- unset QTDIR; unset QT_PLUGIN_PATH ; unset LD_LIBRARY_PATH
+- ./linuxdeployqt-continuous-x86_64.AppImage build/appdir/usr/share/applications/*.desktop -appimage
+after_success:
+- wget -c https://github.com/probonopd/uploadtool/raw/master/upload.sh
+- bash upload.sh Luppp*.AppImage*
+branches:
+  except:
+    #- Do not build tags that we create when we upload to GitHub Releases
+    - /^(?i:continuous)/
+cache:
+  directories:
+    - $HOME/.cache/pip

@@ -45,11 +45,19 @@
 // Jack print controller out MIDI, loading etc
 //#define DEBUG_MIDI              1
 
+// print out few information about looper timing
+//#define DEBUG_TIME                1
+
 
 ///     GENERAL
 #define NTRACKS 8
 #define NSCENES 10
+#define NCHANNELS 2
 #define MAX_BUFFER_SIZE 1024
+
+///     TEMPO
+#define MIN_TEMPO 60
+#define MAX_TEMPO 220
 
 #define CONTROLLERS_PREALLOC 20
 
@@ -61,6 +69,8 @@
 #define LUPPP_RETURN_WARNING  1
 #define LUPPP_RETURN_ERROR    2
 
+// Smoothing value
+#define SMOOTHING_CONST 0.005
 
 ///     debug.hxx for printing convienience
 #include "debug.hxx"

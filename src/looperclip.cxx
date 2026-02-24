@@ -37,9 +37,13 @@ LooperClip::LooperClip(int t, int s) :
 	track(t),
 	scene(s)
 {
-	_buffer = new AudioBuffer();
-	_buffer->nonRtResize( 4410 );
+	_buffer = new AudioBuffer(LOOPER_SAMPLES_UPDATE_SIZE);
 	init();
+
+#ifdef DEBUG_BUFFER
+	cout << "AudioBuffer " << _buffer->getID() << " has size (init): "  << _buffer->getSize() << endl;
+#endif
+	
 }
 
 void LooperClip::init()
@@ -48,9 +52,7 @@ void LooperClip::init()
 	_playing    = false;
 	_recording  = false;
 
-	_queuePlay  = false;
-	_queueStop  = false;
-	_queueRecord= false;
+	resetQueues();
 
 	if ( _buffer ) {
 		_buffer->init();
@@ -60,7 +62,8 @@ void LooperClip::init()
 	_playhead   = 0;
 	_recordhead = 0;
 
-
+	_barsPlayed = 0;
+	updateController();
 }
 
 void LooperClip::save()
@@ -83,32 +86,13 @@ void LooperClip::save()
 
 void LooperClip::reset()
 {
-	// TODO make the LooperClip reset to initial state
-	if ( _loaded ) {
-		char buffer [50];
-		sprintf (buffer, "LC::reset() track %i, scene %i", track,scene);
-		EventGuiPrint e( buffer );
-		writeToGuiRingbuffer( &e );
-
-		// set "progress" to zero as there's no clip anymore
-		jack->getControllerUpdater()->setTrackSceneProgress(track, scene, 0 );
-	} else {
-		//SaveAble::done();
-	}
-
 	init();
 }
 
 /// loads a sample: eg from disk, unloading current sample if necessary
 void LooperClip::load( AudioBuffer* ab )
 {
-	_loaded = true;
-	_recording = false;
-	_playing    = false;
-
-	_queuePlay  = false;
-	_queueStop  = false;
-	_queueRecord= false;
+	setStopped();
 
 	if ( _buffer ) {
 		EventDeallocateBuffer e( _buffer );
@@ -116,9 +100,6 @@ void LooperClip::load( AudioBuffer* ab )
 	}
 
 	_buffer = ab;
-
-	_playhead = 0;
-	jack->getControllerUpdater()->setTrackSceneProgress(track, scene, 0 );
 
 	// set the endpoint to the buffer's size
 	_recordhead = _buffer->getSize();
@@ -179,18 +160,21 @@ void LooperClip::recieveSaveBuffer( AudioBuffer* saveBuffer )
 	}
 }
 
-void LooperClip::setPlayHead(float ph)
+void LooperClip::resetPlayHead()
 {
-	if(!_recording&&_playing) {
-		_playhead = ph;
-		jack->getControllerUpdater()->setTrackSceneProgress(track, scene, getProgress() );
+	if (!_recording)
+	{
+		_playhead = 0;
+		_barsPlayed = 0;
+		updateController();
 	}
 }
 
-
-
 void LooperClip::record(int count, float* L, float* R)
 {
+	if (recordSpaceAvailable() < LOOPER_SAMPLES_BEFORE_REQUEST && !newBufferInTransit()) {
+		requestNewBuffer();
+	}
 	// write "count" samples into current buffer.
 	if ( _buffer ) {
 		size_t size = _buffer->getSize();
@@ -216,14 +200,11 @@ void LooperClip::record(int count, float* L, float* R)
 			}
 		}
 	}
-
-	_loaded = true;
 }
 
 unsigned long LooperClip::recordSpaceAvailable()
 {
 	if ( _buffer )
-		// getData() contains L and R buffer, so it is twice the size
 		return _buffer->getSize() - _recordhead;
 
 	return 0;
@@ -259,19 +240,11 @@ long LooperClip::getBufferLenght()
 
 long LooperClip::getActualAudioLength()
 {
-	char cbuffer [50];
-//    sprintf (cbuffer, "LooperClip recordhead %f,audioFrames %d \n",_recordhead,(int)_buffer->getAudioFrames());
-//    EventGuiPrint e( cbuffer );
-//    writeToGuiRingbuffer( &e );
-//    printf(cbuffer);
 	return _buffer->getAudioFrames();
 }
 
 void LooperClip::bar()
 {
-	bool change = false;
-	GridLogic::State s = GridLogic::STATE_EMPTY;
-
 	// first update the buffer, as time has passed
 	if ( _recording ) {
 		// FIXME: assumes 4 beats in a bar
@@ -279,55 +252,37 @@ void LooperClip::bar()
 		_buffer->setAudioFrames( jack->getTimeManager()->getFpb() * _buffer->getBeats() );
 	}
 
-	if ( _playhead >= _recordhead ) {
-		_playhead = 0.f;
+	if ( _playing ) {
+		_barsPlayed++;
 	}
 
-	if ( _queuePlay && _loaded ) {
-		//LUPPP_NOTE("QPLay + loaded" );
-		_playing = true;
-		s = GridLogic::STATE_PLAYING;
-		_recording = false;
-		_queuePlay = false;
-		change = true;
-
+	// FIXME assumes 4 beats in a bar
+	if ( (_playing && _barsPlayed >= getBeats() / 4) || _playhead >= _recordhead) {
+		_barsPlayed = 0;
 		_playhead = 0;
-	} else if ( _queueStop && _loaded ) {
-		_playing   = false;
-		s = GridLogic::STATE_STOPPED;
-		_recording = false;
-		_queueStop = false;
-		change = true;
-		// set "progress" to zero, as we're stopped!
-		jack->getControllerUpdater()->setTrackSceneProgress(track, scene, 0 );
-	} else if ( _queueRecord ) {
-		_recording   = true;
-		s = GridLogic::STATE_RECORDING;
-		_playing     = false;
-		_queueRecord = false;
-		change = true;
-
-		if ( _buffer ) {
-			_buffer->setBeats( 0 );
-		}
-
-		_recordhead = 0;
-	} else if ( _queuePlay ) {
-		// clip was queued, but there's nothing loaded
-		_queuePlay = false;
-		change = true;
+#ifdef DEBUG_TIME
+			cout << "reset: " << _playhead << " - " << _barsPlayed << "\n";
+#endif
 	}
 
-	if ( change ) {
-		jack->getControllerUpdater()->setSceneState(track, scene, s );
+	if ( _queuePlay ) {
+		setPlaying();
 	}
+	else if (_queueStop && _loaded)
+	{
+		setStopped();
+	} 
+	else if ( _queueRecord ) 
+	{
+		setRecording();
+	} 
 }
 
-void LooperClip::neutralize()
+void LooperClip::resetQueues()
 {
-	_queuePlay = false;
+	_queuePlay   = false;
 	_queueRecord = false;
-	_queueStop = false;
+	_queueStop   = false;
 }
 
 bool LooperClip::somethingQueued()
@@ -338,27 +293,91 @@ bool LooperClip::somethingQueued()
 	return false;
 }
 
-void LooperClip::queuePlay(bool qP)
+void LooperClip::queuePlay()
 {
-	_queuePlay   = true;
-	_queueStop   = false;
-	_queueRecord = false;
+	if (_loaded && !somethingQueued())
+	{
+		_queuePlay = true;
+		_queueStop = false;
+		_queueRecord = false;
+	}
+	updateController();
 }
 
 void LooperClip::queueStop()
 {
-	// comment
-	if ( _loaded ) {
-		_queueStop   = true;
-		_queuePlay   = false;
+	if (_loaded && _playing && !somethingQueued())
+	{
+		_queuePlay = false;
+		_queueStop = true;
+		_queueRecord = false;
 	}
+	updateController();
 }
 
 void LooperClip::queueRecord()
 {
-	_queueRecord = true;
-	_queuePlay   = false;
-	_queueStop   = false;
+	if (!somethingQueued())
+	{
+		_queuePlay = false;
+		_queueStop = false;
+		_queueRecord = true;
+	}
+	updateController();
+}
+
+void LooperClip::setRecording()
+{
+	_loaded 	= true;
+	_playing    = false;
+	_recording  = true;
+
+	resetQueues();
+
+	_recordhead = 0;
+
+	if ( _buffer ) {
+		_buffer->setBeats( 0 );
+	}
+
+	updateController();
+}
+
+void LooperClip::setPlaying() 
+{
+	if ( _loaded ) {
+		_playing    = true;
+		_recording  = false;
+
+		resetQueues();
+
+		_barsPlayed = 0;
+		_playhead 	= 0;
+	} else {
+		resetQueues();
+	}
+	updateController();
+}
+
+void LooperClip::setStopped()
+{
+		_loaded 	= true;
+		_playing    = false;
+		_recording  = false;
+
+		resetQueues();
+
+		_barsPlayed = 0;
+		_playhead   = 0;
+
+		// set "progress" to zero, as we're stopped!
+		updateController();
+}
+
+void LooperClip::updateController()
+{
+	jack->getControllerUpdater()->setSceneState(track, scene, getState());
+	jack->getControllerUpdater()->setTrackSceneProgress(track, scene, getProgress());
 }
 
 GridLogic::State LooperClip::getState()
@@ -406,9 +425,11 @@ bool LooperClip::recording()
 	return _recording;
 }
 
-void LooperClip::newBufferInTransit(bool n)
+void LooperClip::requestNewBuffer()
 {
-	_newBufferInTransit = n;
+	EventLooperClipRequestBuffer e( track, scene, audioBufferSize() + LOOPER_SAMPLES_UPDATE_SIZE);
+	writeToGuiRingbuffer( &e );
+	_newBufferInTransit = true;
 }
 
 bool LooperClip::newBufferInTransit()
@@ -416,23 +437,20 @@ bool LooperClip::newBufferInTransit()
 	return _newBufferInTransit;
 }
 
-void LooperClip::getSample(float playSpeed, float* L, float* R)
+void LooperClip::getSample(long double playSpeed, float* L, float* R)
 {
 	if ( _buffer && (_buffer->getSize() > 0)) {
 		if ( _playhead >= _recordhead ||
 		     _playhead >= _buffer->getSize() ||
 		     _playhead < 0  ) {
-			_playhead = 0;
-
-			EventGuiPrint e( "LooperClip resetting _playhead" );
-			//writeToGuiRingbuffer( &e );
+			resetPlayHead();
 		}
 
 		std::vector<float>& vL = _buffer->getDataL();
 		std::vector<float>& vR = _buffer->getDataR();
-		*L = vL.at(_playhead);
-		*R = vR.at(_playhead);
-		_playhead +=playSpeed;
+		*L = vL[_playhead+0.5];
+		*R = vR[_playhead+0.5];
+		_playhead += playSpeed;
 	} else {
 		*L = 0.f;
 		*R = 0.f;
@@ -443,7 +461,6 @@ float LooperClip::getProgress()
 {
 	if ( _buffer && _playing ) {
 		float p = float(_playhead) / _recordhead;
-		//printf("LooperClip progress %f\n", p );
 		return p;
 	}
 	return 0.f;

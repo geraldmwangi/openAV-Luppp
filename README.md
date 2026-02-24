@@ -1,11 +1,13 @@
 Luppp - OpenAV Productions
 ===============================
 
-Official page: http://openavproductions.com/luppp
+  * [Official web page](http://openavproductions.com/luppp)
+  * [Demo videos](https://www.youtube.com/playlist?list=PLPVwzZjovbBxIik8lUisH5XdLzALDeY9j)
+  * [User documentation](http://openavproductions.com/doc/luppp.html)
 
 This is the repository of Luppp, the live looping tool.
 
-![screenshot](https://raw.github.com/harryhaaren/openAV-Luppp/master/resources/screenshots/1.0.png "Luppp 1.0 Screenshot")
+![screenshot](resources/screenshots/1.2.png "Luppp 1.2 Screenshot")
 
 Intro
 -----
@@ -21,7 +23,9 @@ CAIRO
 LIBLO
 LIBSNDFILE
 LIBSAMPLERATE
-NTK  ( git clone git://git.tuxfamily.org/gitroot/non/fltk.git ntk )
+NTK  ( git clone git://git.tuxfamily.org/gitroot/non/fltk.git ntk
+    or git clone https://git.kx.studio/non/ntk )
+
 ```
 
 Install
@@ -30,22 +34,16 @@ Install
 Run the following commands from the top directory to configure & install Luppp:
 
 ```bash
+meson build
 cd build
-./compile.sh
-./run.sh
+ninja
+./luppp
 ```
-
-
-Usage
------
-There are a range of demo videos and tutorials available
-on OpenAV's youtube channel:
-www.youtube.com/user/openAVproductions
 
 
 Issues
 ------
-Please report bugs on www.github.com/harryhaaren/luppp/issues
+Please report bugs on [github.com/openAVproductions/openAV-Luppp/issues](http://github.com/openAVproductions/openAV-Luppp/issues)
 
 
 Contact

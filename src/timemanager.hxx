@@ -35,10 +35,11 @@ class TimeManager
 public:
 	TimeManager();
 
-	int getFpb();
-	void setBpm(float bpm);
-	void setBpmZeroOne(float bpm);
-	void setFpb(float f);
+	double getFpb();
+	void queueBpmChange(float bpm);
+	void queueBpmChangeZeroOne(float bpm);
+	void queueFpbChange(double f);
+	void setFpb(double f);
 
 	/// add a component to be updated for time events
 	void registerObserver(TimeObserver* o);
@@ -65,7 +66,8 @@ private:
 	TRANSPORT_STATE transportState;
 
 	/// number of frames per beat
-	int fpb;
+	double _fpb;
+	double _nextFpb;
 
 	/// holds the number of frames processed
 	long long totalFrameCounter;
@@ -81,6 +83,8 @@ private:
 
 	int tapTempoPos;
 	long long tapTempo[3];
+
+	bool _bpmChangeQueued = false;
 
 	std::vector<TimeObserver*> observers;
 };

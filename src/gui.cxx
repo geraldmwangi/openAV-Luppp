@@ -51,6 +51,7 @@ extern Jack* jack;
 #include "../planning/header.c"
 #include "../planning/luppp.c"
 #include "../planning/bg.c"
+#include "../planning/settings.c"
 
 using namespace std;
 
@@ -97,7 +98,8 @@ void option_controller_cb(Fl_Widget*,void* data)
 static void gui_header_callback(Fl_Widget *w, void *data)
 {
 	Gui* g = (Gui*)data;
-	if ( Fl::event_x() > 130 ) {
+
+	if ( Fl::event_x() > 166 ) {
 		return;
 	}
 
@@ -116,7 +118,7 @@ static void gui_header_callback(Fl_Widget *w, void *data)
 		rclick_menu[2].deactivate();
 	}
 
-	Fl_Menu_Item *m = (Fl_Menu_Item*) rclick_menu->popup( 10, 38, 0, 0, 0);
+	Fl_Menu_Item *m = (Fl_Menu_Item*) rclick_menu->popup( 130, 38, 0, 0, 0);
 
 	if ( !m ) {
 		return;
@@ -178,11 +180,13 @@ static void gui_header_callback(Fl_Widget *w, void *data)
 
 		return;
 	} else if ( strcmp(m->label(), "Save Session   ") == 0 ) {
-		const char* name = fl_input( "Save session as", gui->getDiskWriter()->getLastSaveName().c_str() );
+		const string projectsDir = gui->getProjectsDir();
+		string prompt = "Save session as " + projectsDir;
+		const char* name = fl_input( "%s", gui->getDiskWriter()->getLastSaveName().c_str(), prompt.c_str() );
 		if ( name ) {
-			gui->getDiskWriter()->initialize( gui->getProjectsDir().c_str(), name );
+			gui->getDiskWriter()->initialize( projectsDir, name );
 			LUPPP_NOTE("%s %s","Saving session as ", name );
-			EventStateSave e;
+			EventSessionSave e;
 			writeToDspRingbuffer( &e );
 		}
 	} else if ( strcmp(m->label(), "Setup") == 0 ) {
@@ -247,10 +251,8 @@ string Gui::getProjectsDir()
 
 void Gui::selectSaveSample( int track, int scene )
 {
-	EventStateSaveBuffer e;
-	e.track = track,
-	  e.scene = scene,
-	    writeToDspRingbuffer( &e );
+	EventClipSave e = EventClipSave(track, scene);
+	writeToDspRingbuffer( &e );
 }
 
 char *
@@ -349,7 +351,7 @@ static int cb_nsm_save ( char **out_msg, void *userdata )
 	LUPPP_NOTE("NSM: saving..." );
 
 	// disk-writer already initialized to the right directory, so just write!
-	EventStateSave e;
+	EventSessionSave e;
 	writeToDspRingbuffer( &e );
 
 	return 0;
@@ -397,14 +399,6 @@ Gui::Gui(const char* argZero) :
 
 	window.color( fl_rgb_color (7,7,7) );
 
-	/*
-	tooltipLabel = new Fl_2(130, 25, 500, 20, "");
-	tooltipLabel->labelcolor( FL_LIGHT2 );
-	tooltipLabel->color( FL_DARK2 );
-	tooltipLabel->hide();
-	//tooltipLabel->align( FL_ALIGN_TOP_LEFT );
-	*/
-
 	// horizontal no-resize-images group
 	Fl_Group* headerImages = new Fl_Group( 0, 0, 1110, 650, "header");
 	{
@@ -415,7 +409,10 @@ Gui::Gui(const char* argZero) :
 
 			Avtk::Image* lupppImage = new Avtk::Image(0,0,130,36,"luppp");
 			lupppImage->setPixbuf( lupppImg.pixel_data, 4 );
-			lupppImage->callback( gui_header_callback, this );
+
+			Avtk::Image* settingsImage = new Avtk::Image(131,0,36,36,"settings");
+			settingsImage->setPixbuf( settingsImg.pixel_data, 4 );
+			settingsImage->callback( gui_header_callback, this );
 
 			Avtk::Image* headerImage = new Avtk::Image( window.w() - 270,0,270,36,"header");
 			headerImage->setPixbuf( header.pixel_data, 4 );
@@ -880,7 +877,17 @@ int Gui::keyboardHandler(int event)
 		}
 	}
 
-	// keyboard arrows to special key mapping
+	// keyboard arrows / space to special key mapping
+	if ( Fl::event_key( 32 ) &&  Fl::event_state( FL_SHIFT ) ) { //spacebar + shift
+		EventGridState e( gui->specialTrack, gui->specialScene, GridLogic::STATE_EMPTY  );
+		writeToDspRingbuffer( &e );
+		return 1;
+	}
+	if ( Fl::event_key( 32 ) ) { //spacebar
+		EventGridEvent e( gui->specialTrack, gui->specialScene, true );
+		writeToDspRingbuffer( &e );
+		return 1;
+	}
 	if ( Fl::event_key( FL_Left  ) ) {
 		EventGridSelectNewChosen e( gui->specialTrack-1, gui->specialScene  );
 		writeToDspRingbuffer( &e );
@@ -898,6 +905,12 @@ int Gui::keyboardHandler(int event)
 	}
 	if ( Fl::event_key( FL_Down  ) ) {
 		EventGridSelectNewChosen e( gui->specialTrack  , gui->specialScene+1);
+		writeToDspRingbuffer( &e );
+		return 1;
+	}
+	if ( Fl::event_key( FL_Delete  ) ) {
+		EventGridState e( gui->specialTrack, gui->specialScene,
+				  GridLogic::STATE_EMPTY);
 		writeToDspRingbuffer( &e );
 		return 1;
 	}

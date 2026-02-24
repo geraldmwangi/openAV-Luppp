@@ -214,14 +214,10 @@ void handleGuiEvents()
 #ifdef DEBUG_SAVE
 					cout << "EventSaveBuffer: " << ev.track << " " << ev.scene << " " << ev.ab->getID() << endl;
 #endif
-					gui->getDiskWriter()->writeAudioBuffer( ev.track, ev.scene, ev.ab );
-					// de allocate the AudioBuffer only if reqested
-					if(!ev.no_dealloc) {
+					if(gui->saveBufferPath.empty()) {
 						gui->getDiskWriter()->writeAudioBuffer( ev.track, ev.scene, ev.ab );
-						delete ev.ab;
 					} else {
-						gui->getDiskWriter()->writeAudioBuffer(ev.track, ev.scene, ev.ab,
-						                                       gui->saveBufferPath.c_str());
+						gui->getDiskWriter()->writeAudioBuffer(ev.track, ev.scene, ev.ab, gui->saveBufferPath.c_str());
 						gui->saveBufferPath = "";
 					}
 
@@ -249,6 +245,11 @@ void handleGuiEvents()
 					gui->getTrack(ev.track)->getClipSelector()->setState( ev.scene, ev.state );
 					if ( ev.state == GridLogic::STATE_RECORDING )
 						gui->getTrack(ev.track)->getRadialStatus()->recording( true );
+					else if ( ev.state == GridLogic::STATE_EMPTY ) {
+						// reset clip name if clip gets cleared
+						gui->getTrack(ev.track)->getClipSelector()->clips[ ev.scene ].setName("");
+						gui->getTrack(ev.track)->getRadialStatus()->recording(false);
+					}
 					else
 						gui->getTrack(ev.track)->getRadialStatus()->recording( false );
 				}
@@ -368,7 +369,7 @@ void handleGuiEvents()
 					EventLooperClipRequestBuffer returnEvent(ev.track, ev.scene, ab);
 					writeToDspRingbuffer( &returnEvent );
 #ifdef DEBUG_BUFFER
-					printf("new buffer going to track %i, scene %i\n",ev.track, ev.scene);
+					printf("new buffer going to track %i, scene %i, size %lu\n",ev.track, ev.scene, ev.numElements);
 #endif
 				}
 				break;

@@ -91,10 +91,10 @@ void handleDspEvents()
 			}
 
 			// ========= SAVE =====
-			case Event::STATE_SAVE: {
-				if ( availableRead >= sizeof(EventStateSave) ) {
-					EventStateSave ev;
-					jack_ringbuffer_read( rbToDsp, (char*)&ev, sizeof(EventStateSave) );
+			case Event::SESSION_SAVE: {
+				if ( availableRead >= sizeof(EventSessionSave) ) {
+					EventSessionSave ev;
+					jack_ringbuffer_read( rbToDsp, (char*)&ev, sizeof(EventSessionSave) );
 					jack->getState()->save();
 				}
 				break;
@@ -107,19 +107,14 @@ void handleDspEvents()
 				}
 				break;
 			}
-			case Event::STATE_SAVE_BUFFER: {
-				if ( availableRead >= sizeof(EventStateReset) ) {
-					EventStateSaveBuffer ev;
-					jack_ringbuffer_read( rbToDsp, (char*)&ev, sizeof(EventStateSaveBuffer) );
+			case Event::CLIP_SAVE: {
+				if ( availableRead >= sizeof(EventClipSave) ) {
+					EventClipSave ev;
+					jack_ringbuffer_read( rbToDsp, (char*)&ev, sizeof(EventClipSave) );
 					printf("jack got save buffer in %d, %d\n", ev.track, ev.scene);
 					LooperClip* lc = jack->getLooper(ev.track)->getClip(ev.scene);
 					if(!lc) break;
-					EventStateSaveBuffer e;
-					e.track = ev.track;
-					e.scene = ev.scene;
-					e.ab = lc->getAudioBuffer();
-					e.no_dealloc = 1;
-					writeToGuiRingbuffer( &e );
+					lc->save();
 				}
 				break;
 			}
@@ -176,12 +171,8 @@ void handleDspEvents()
 				if ( availableRead >= sizeof(EventGridState) ) {
 					EventGridState ev;
 					jack_ringbuffer_read( rbToDsp, (char*)&ev, sizeof(EventGridState) );
-					// clear clips in Controllers
-					if ( ev.state == GridLogic::STATE_EMPTY ) {
-						jack->getLooper( ev.track )->getClip( ev.scene )->init();
-						jack->getControllerUpdater()->setTrackSceneProgress(ev.track, ev.scene, 0 );
-						jack->getControllerUpdater()->setSceneState( ev.track, ev.scene, GridLogic::STATE_EMPTY );
-					}
+					if ( ev.state == GridLogic::STATE_EMPTY )
+						jack->getGridLogic()->clear( ev.track, ev.scene );
 				}
 				break;
 			}
@@ -287,7 +278,7 @@ void handleDspEvents()
 				if ( availableRead >= sizeof(EventTimeBPM) ) {
 					EventTimeBPM ev;
 					jack_ringbuffer_read( rbToDsp, (char*)&ev, sizeof(EventTimeBPM) );
-					jack->getTimeManager()->setBpm(ev.bpm);
+					jack->getTimeManager()->queueBpmChange(ev.bpm);
 				}
 				break;
 			}
@@ -304,14 +295,6 @@ void handleDspEvents()
 
 			case Event::FX_REVERB:
 				break;
-			/*{
-			  if ( availableRead >= sizeof(EventFxReverb) ) {
-			    EventFxReverb ev;
-			    jack_ringbuffer_read( rbToDsp, (char*)&ev, sizeof(EventFxReverb) );
-			    // TODO implement reverb
-			    break; }
-			  }
-			*/
 			case Event::TRACK_VOLUME: {
 				if ( availableRead >= sizeof(EventTrackVol) ) {
 					EventTrackVol ev;

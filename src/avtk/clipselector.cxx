@@ -45,7 +45,7 @@ ClipSelector::ClipSelector( int _x, int _y, int _w, int _h,
 	_master = master;
 
 	if ( _master ) {
-		for(int i = 0; i < 10; i++ ) {
+		for(int i = 0; i < NSCENES; i++ ) {
 			stringstream s;
 			s << "Scene " << i + 1;
 			clips[i].setName( s.str() );
@@ -72,9 +72,6 @@ void ClipSelector::setState( int clipNum, GridLogic::State s )
 	//cout << "ClipSelector::setState() t = " << ID << " clipNum = " << clipNum << "  state = " << s << endl;
 #endif
 	clips[clipNum].setState( s );
-	if ( s == GridLogic::STATE_EMPTY ) {
-		clips[clipNum].setName("");
-	}
 
 	redraw();
 }

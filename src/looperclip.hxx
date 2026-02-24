@@ -42,27 +42,30 @@ class AudioBuffer;
  * to dynamically stretch / process the audio appropriately. Controllers and the
  * UI are updated from this data.
  *
- * This class inherits from SaveAble to save its state.
+ * This class inherits from Stately to save its state.
 **/
 class LooperClip : public Stately
 {
 public:
 	LooperClip(int track, int scene);
 
+	/// Set everything up
 	void init();
 
 	/// loads a sample: eg from disk, unloading current sample if necessary
 	void load( AudioBuffer* ab );
 
-	/// audio functionality
-	void getSample(float playSpeed, float* L, float* R);
+	/// Return one Sample according to current playSpeed
+	void getSample(long double playSpeed, float* L, float* R);
+	/// Record $count Samples into internal Buffer
 	void record(int count, float* L, float* R);
 
 	/// TimeObserver override
 	void bar();
 
-	/// SaveAble overrides
+	/// Start process of saving the clip
 	void save();
+	/// Reset the clip to initial state
 	void reset();
 
 	/// analyses current _playing _recording vars, returns the current State
@@ -73,36 +76,34 @@ public:
 	bool getQueuePlay();
 	bool recording();
 
-	/// get buffer details
+	/// Get number of Beats in the Buffer
 	int   getBeats();
+	/// Get playback progress
 	float getProgress();
+	/// Get position of the playhead
 	float getPlayhead();
-	//Return the length of the complete buffer
+
+	/// Return the length of the complete buffer
 	long  getBufferLenght();
-	//Return the nr of samples holding actual audio. This is less then getBufferLength();
+	/// Return the nr of samples holding actual audio. This is less then getBufferLength();
 	long  getActualAudioLength();
+	/// Return Size of the Buffer
 	size_t audioBufferSize();
 
-	AudioBuffer* getAudioBuffer()
-	{
-		return _buffer;
-	}
-
-	/// set clip state
-	void  queuePlay(bool=true);
+	/// Queue Play
+	void  queuePlay();
+	/// Queue Stop
 	void  queueStop();
+	/// Queue Record
 	void  queueRecord();
 
-	void  neutralize(); // removes all play || record states if on
-	bool  somethingQueued(); // returns true if any state is queued
+	// removes all queued States
+	void  resetQueues(); 
+	// returns true if any state is queued
+	bool  somethingQueued(); 
 
 	/// set buffer state
 	void setBeats(int beats);
-
-	/// Luppp internal buffer resizing
-	void newBufferInTransit(bool n);
-	bool newBufferInTransit();
-	unsigned long recordSpaceAvailable();
 
 	/** used to update the size of the buffer for this looperclip. The current
 	 *  data is copied into the new buffer, then the smaller buffer is sent
@@ -113,8 +114,8 @@ public:
 	/// used for saving the contents of this buffer to disk
 	void recieveSaveBuffer( AudioBuffer* ab );
 
-	///reset the play head to zero. Does nothing when recording
-	void setPlayHead(float ph);
+	/// reset the play head to zero. Does nothing when recording
+	void resetPlayHead();
 
 #ifdef BUILD_TESTS
 	// used only in test cases
@@ -138,9 +139,28 @@ private:
 
 	bool _newBufferInTransit;
 
-	float _playhead;
+	long double _playhead;
 	float _recordhead;
+
+	unsigned int _barsPlayed;
 	AudioBuffer* _buffer;
+
+	/// Request new internal Buffer
+	void requestNewBuffer();
+	/// Get if a new internal Buffer is on the way
+	bool newBufferInTransit();
+	/// Get available Space to record
+	unsigned long recordSpaceAvailable();
+
+	/// Change State to Playing
+	void setPlaying();
+	/// Change State to Recording
+	void setRecording();
+	/// Change State to Stopped
+	void setStopped();
+
+	/// Updates all the controllers with the current state
+	void updateController();
 };
 
 #endif // LUPPP_LOOPER_CLIP_H

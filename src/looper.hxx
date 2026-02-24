@@ -45,7 +45,7 @@ public:
 	void setRequestedBuffer(int s, AudioBuffer* ab);
 
 	/// stores the framesPerBeat from TimeManager. Used to stretch audio
-	void setFpb(int f);
+	void setFpb(double f);
 
 	/// Retrieve a clip from the Looper
 	LooperClip* getClip(int scene);
@@ -67,10 +67,10 @@ private:
 	int playingScene;
 	int queuedScene;
 
-	int fpb;
+	double fpb;
 
 	//vector<float> tmpRecordBuffer;
-	LooperClip* clips[10];
+	LooperClip* clips[NSCENES];
 
 	// Pitch Shifting
 	void pitchShift(int count, float* input, float* output);

@@ -38,7 +38,12 @@ void Logic::tapTempo()
 
 void Logic::setBpm(float bpm)
 {
-	jack->getTimeManager()->setBpm( bpm );
+	jack->getTimeManager()->queueBpmChange( bpm );
+}
+
+void Logic::setBpmZeroOne(float bpm)
+{
+	jack->getTimeManager()->queueBpmChangeZeroOne( bpm );
 }
 
 void Logic::metronomeEnable(bool b)
@@ -159,7 +164,7 @@ void Logic::looperUseAsTempo(int t, int s)
 
 	if ( clipBeats > 0 ) {
 		size_t framesPerBeat = clipFrames / clipBeats;
-		jack->getTimeManager()->setFpb( framesPerBeat );
+		jack->getTimeManager()->queueFpbChange( framesPerBeat );
 	}
 
 }

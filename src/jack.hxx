@@ -66,6 +66,8 @@ public:
 
 	int getBuffersize();
 	int getSamplerate();
+	int setBufferSizeCallback();
+	static int bufferSizeCallback(jack_nframes_t nframes, void *arg);
 
 	// Luppp process callback: bar() events can occur between these
 	void processFrames(int nframes);
@@ -101,6 +103,11 @@ public:
 	{
 		return controllerUpdater;
 	}
+	
+	float getInputVolume() 
+	{
+		return inputVol;
+	}
 
 	void transportRolling(bool rolling);
 
@@ -131,9 +138,11 @@ public:
 	int bindingActive;
 
 	JackSendReturn *getJackSendReturn(int t);
+
+	float smoothing_value;
 private:
 	int                 lastnframes;
-	jack_client_t* client;
+	jack_client_t*      client;
 
 	Buffers             buffers;
 	TimeManager*        timeManager;
@@ -152,22 +161,35 @@ private:
 	// FX
 	DBMeter* inputMeter;
 	DBMeter* masterMeter;
-
-	float inputVol;
-	/// _toMasterLag is a volume that lags behind _toMaster when setMaster() is called
+	
+	/// *Lag are values that lag behind their corresponding value
 	/// This prohibits audible jumps when rapidly changing the volume
+	float inputVol;
+	float inputVolLag;
+	
 	float masterVol;
 	float masterVolLag;
-	float masterVolDiff;
+
 	float returnVol;
+	float returnVolLag;
 
 	float inputToMixVol;
+	float inputToMixVolLag;
+
 	float inputToSendVol;
+	float inputToSendVolLag;
+
 	float inputToXSideVol;
+	float inputToXSideVolLag;
 
 	bool  inputToKeyEnable;
+	float inputToKeyEnableLag;
+
 	bool  inputToMixEnable;
+	float inputToMixEnableLag;
+
 	bool  inputToSendEnable;
+	float inputToSendEnableLag;
 
 	// JACK member variables
 	bool clientActive;

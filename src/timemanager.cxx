@@ -21,6 +21,10 @@
 #include <iostream>
 #include <cstdio>
 
+#ifdef DEBUG_TIME
+	#include <iomanip>
+#endif
+
 #include "buffers.hxx"
 #include "eventhandler.hxx"
 
@@ -38,7 +42,7 @@ TimeManager::TimeManager():
 {
 	samplerate = jack->getSamplerate();
 	// 120 BPM default
-	fpb = samplerate / 2;
+	_fpb = samplerate / 2;
 
 	//Counter for current bar/beat
 	barCounter  = 0;
@@ -60,39 +64,54 @@ TimeManager::TimeManager():
 }
 
 
-int TimeManager::getFpb()
+double TimeManager::getFpb()
 {
-	return fpb;
+	return _fpb;
 }
 
-void TimeManager::setBpm(float bpm)
+void TimeManager::queueBpmChange(float bpm)
 {
+	double frames = (double)samplerate * (double)60 / (double)bpm;
 #ifdef DEBUG_TIME
 	LUPPP_NOTE("%s %f","setBpm()",bpm);
+	cout << "calculated: " << fixed << setprecision(20) << frames << "\n";
 #endif
-	setFpb( samplerate / bpm * 60 );
+	queueFpbChange( frames );
+}
+
+void TimeManager::queueBpmChangeZeroOne(float b)
+{
+	queueBpmChange( b * (MAX_TEMPO - MIN_TEMPO) + MIN_TEMPO ); // MIN_TEMPO - MAX_TEMPO
+}
+
+void TimeManager::queueFpbChange( double f )
+{
+	float bpm = (samplerate * 60.f) / f;
+	if(bpm < MIN_TEMPO || bpm > MAX_TEMPO) {
+		char buffer[128];
+		snprintf(buffer, sizeof(buffer), "drop TM::qfpb() %d bpm = %d",
+			 (int)f, (int)bpm);
+		EventGuiPrint e( buffer );
+		writeToGuiRingbuffer( &e );
+		return;
+	}
+
+	_bpmChangeQueued = true;
+	_nextFpb = f;
+}
+
+void TimeManager::setFpb(double f)
+{
 	barCounter  = 0;
 	beatCounter = 0;
 	beatFrameCountdown = -1;
-	/*
-	for(int i=0;i<observers.size();i++)
-	    observers[i]->resetTimeState();
-	*/
-}
 
-void TimeManager::setBpmZeroOne(float b)
-{
-	setBpm( b * 160 + 60 ); // 60 - 220
-}
-
-
-void TimeManager::setFpb(float f)
-{
-	fpb = f;
+	_fpb = f;
 	int bpm = ( samplerate * 60) / f;
 
 	char buffer [50];
-	sprintf (buffer, "TM, setFpb() %i, bpm = %i", int(f), int(bpm) );
+	snprintf(buffer, sizeof(buffer), "TM, setFpb() %i, bpm = %i",
+		  int(f), int(bpm) );
 	EventGuiPrint e( buffer );
 	writeToGuiRingbuffer( &e );
 
@@ -100,7 +119,7 @@ void TimeManager::setFpb(float f)
 	writeToGuiRingbuffer( &e2 );
 
 	for(uint i = 0; i < observers.size(); i++) {
-		observers.at(i)->setFpb(fpb);
+		observers.at(i)->setFpb(_fpb);
 	}
 }
 
@@ -108,9 +127,9 @@ void TimeManager::registerObserver(TimeObserver* o)
 {
 	//LUPPP_NOTE("%s","registerObserver()");
 	observers.push_back(o);
-	o->setFpb( fpb );
+	o->setFpb( _fpb );
 
-	int bpm = ( samplerate * 60) / fpb;
+	int bpm = ( samplerate * 60) / _fpb;
 	EventTimeBPM e2( bpm );
 	writeToGuiRingbuffer( &e2 );
 }
@@ -135,19 +154,21 @@ void TimeManager::tap()
 
 		if( average < 13000 ) {
 			char buffer [50];
-			sprintf (buffer, "TM, tap() average too slow! quitting");
+			snprintf(buffer, sizeof(buffer),
+				 "TM, tap() average too slow! quitting");
 			EventGuiPrint e( buffer );
 			writeToGuiRingbuffer( &e );
 			return;
 		}
 
 		char buffer [50];
-		sprintf (buffer, "TM, tap() average = %i", average );
+		snprintf(buffer, sizeof(buffer), "TM, tap() average = %i",
+			 average);
 		EventGuiPrint e( buffer );
 		writeToGuiRingbuffer( &e );
 
 
-		setFpb(average);
+		queueFpbChange(average);
 
 		// reset, so next 3 taps restart process
 		tapTempoPos = 0;
@@ -194,18 +215,21 @@ void TimeManager::process(Buffers* buffers)
 		//length of beat is not multiple of nframes, so need to process last frames of last beat *before* setting next beat
 		//then set new beat (get the queued actions: play, rec etc)
 		// then process first frames *after* new beat
-		int before=(beatCounter*fpb)%nframes;
+		int before=int(beatCounter*_fpb)%nframes;
 		int after=nframes-before;
 
 		if ( before < nframes && after <= nframes && before + after == nframes ) {
 			char buffer [50];
-//      sprintf (buffer, "Timing OK: before %i, after %i, b+a %i",  before, after, before+after );
+//      snprintf(buffer, sizeof(buffer), "Timing OK: before %i, after %i, b+a %i",
+//               before, after, before+after );
 //      EventGuiPrint e2( buffer );
 //      writeToGuiRingbuffer( &e2 );
 
 		} else {
 			char buffer [50];
-			sprintf (buffer, "Timing Error: before: %i, after %i", before, after );
+			snprintf(buffer, sizeof(buffer),
+				 "Timing Error: before: %i, after %i",
+				 before, after );
 			EventGuiPrint e2( buffer );
 			writeToGuiRingbuffer( &e2 );
 		}
@@ -227,6 +251,12 @@ void TimeManager::process(Buffers* buffers)
 			}
 			barCounter++;
 			//beatCounter=0;
+
+			if(_bpmChangeQueued)
+			{
+				setFpb(_nextFpb);
+				_bpmChangeQueued = false;
+			}
 		}
 
 		// process after
@@ -241,7 +271,7 @@ void TimeManager::process(Buffers* buffers)
 
 
 
-		beatFrameCountdown = fpb-after;
+		beatFrameCountdown = _fpb-after;
 		beatCounter++;
 	} else {
 		jack->processFrames( nframes );
@@ -252,14 +282,14 @@ void TimeManager::process(Buffers* buffers)
 	totalFrameCounter += nframes;
 
 	// write BPM / transport info to JACK
-	int bpm = ( samplerate * 60) / fpb;
+	int bpm = ( samplerate * 60) / _fpb;
 	if ( buffers->transportPosition ) {
 		buffers->transportPosition->valid = (jack_position_bits_t)(JackPositionBBT | JackTransportPosition);
 
 		buffers->transportPosition->bar  = beatCounter / 4 + 1;// bars 1-based
 		buffers->transportPosition->beat = (beatCounter % 4) + 1; // beats 1-4
 
-		float part = float( fpb-beatFrameCountdown) / fpb;
+		float part = float( _fpb-beatFrameCountdown) / _fpb;
 		buffers->transportPosition->tick = part > 1.0f? 0.9999*1920 : part*1920;
 
 		buffers->transportPosition->frame = totalFrameCounter;

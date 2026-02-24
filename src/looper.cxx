@@ -23,10 +23,15 @@
 
 #include <cmath>
 
+#ifdef DEBUG_TIME
+	#include <iomanip>
+#endif
+
 #include "jack.hxx"
 #include "audiobuffer.hxx"
 #include "eventhandler.hxx"
 #include "controllerupdater.hxx"
+#include "timemanager.hxx"
 
 extern Jack* jack;
 
@@ -42,13 +47,13 @@ Looper::Looper(int t) :
 	//tmpRecordBuffer = (float*)malloc( sizeof(float) * MAX_BUFFER_SIZE );
 	//memset( tmpRecordBuffer, 0, sizeof(float) * MAX_BUFFER_SIZE );
 
-	for(int i = 0; i < 10; i++ ) {
+	for(int i = 0; i < NSCENES; i++ ) {
 		clips[i] = new LooperClip(track, i);
 	}
 
 	tmpBuffer.resize( MAX_BUFFER_SIZE );
 
-	fpb = 22050;
+	fpb = jack->getTimeManager()->getFpb();
 
 	// init faust pitch shift variables
 	fSamplingFreq = jack->getSamplerate();
@@ -97,7 +102,7 @@ void Looper::setRequestedBuffer(int s, AudioBuffer* ab)
 	clips[s]->setRequestedBuffer( ab );
 }
 
-void Looper::setFpb(int f)
+void Looper::setFpb(double f)
 {
 	fpb = f;
 }
@@ -110,29 +115,38 @@ void Looper::process(unsigned int nframes, Buffers* buffers)
 		// handle state of clip, and do what needs doing:
 		// record into buffer, play from buffer, etc
 		if ( clips[clip]->recording() ) {
-			if ( clips[clip]->recordSpaceAvailable() <  LOOPER_SAMPLES_BEFORE_REQUEST &&
-			     !clips[clip]->newBufferInTransit() ) {
-				EventLooperClipRequestBuffer e( track, clip, clips[clip]->audioBufferSize() + LOOPER_SAMPLES_UPDATE_SIZE);
-				writeToGuiRingbuffer( &e );
-				clips[clip]->newBufferInTransit(true);
-			}
-
 			// copy data from input buffer to recording buffer
 			float* inputL = buffers->audio[Buffers::MASTER_INPUT_L];
 			float* inputR = buffers->audio[Buffers::MASTER_INPUT_R];
+
+			for (unsigned int i = 0; i < nframes; i++ ) {
+				inputL[i] *= jack->getInputVolume();
+				inputR[i] *= jack->getInputVolume();
+			}
+
 			clips[clip]->record( nframes, inputL, inputR);
 		} else if ( clips[clip]->playing() ) {
 			// copy data into tmpBuffer, then pitch-stretch into track buffer
 			long targetFrames = clips[clip]->getBeats() * fpb;
 			long actualFrames = clips[clip]->getActualAudioLength();//getBufferLenght();
-			float playSpeed = 1.0;
+#ifdef DEBUG_TIME
+				cout << "FPB: " << fpb << "\n";
+				cout << "Target: " << targetFrames << " - Actual: " << actualFrames << "\n";
+#endif
+			long double playSpeed = 1.0;
 
 			if ( targetFrames != 0 && actualFrames != 0 ) {
-				playSpeed = float(actualFrames) / targetFrames;
+				playSpeed = (long double)(actualFrames) / (long double)(targetFrames);
+
+#ifdef DEBUG_TIME
+					cout << fixed << setprecision(20) << playSpeed << "\n";
+#endif
 			}
 
-			float* outL = buffers->audio[Buffers::SEND_TRACK_0_L + track];
-			float* outR = buffers->audio[Buffers::SEND_TRACK_0_R + track];
+			// index = first-track + (track * channels)
+			int trackoffset = track * NCHANNELS;
+			float* outL = buffers->audio[Buffers::SEND_TRACK_0_L + trackoffset];
+			float* outR = buffers->audio[Buffers::SEND_TRACK_0_R + trackoffset];
 
 			for(unsigned int i = 0; i < nframes; i++ ) {
 				// REFACTOR into system that is better than per sample function calls
@@ -146,7 +160,7 @@ void Looper::process(unsigned int nframes, Buffers* buffers)
 				// write the pitch-shifted signal to the track buffer
 				//FIXME: pitchShift adds delay even for playSpeed = 1.0!!
 				//we should use something better (e.g librubberband)
-				if(playSpeed!=1.0f) {
+				if(0) { //playSpeed!=1.0f) {
 					pitchShift( 1, &tmpL, &outL[i] );
 					pitchShift( 1, &tmpR, &outR[i] );
 				} else {
@@ -172,7 +186,7 @@ void Looper::process(unsigned int nframes, Buffers* buffers)
 void Looper::resetTimeState()
 {
 	for(int i=0; i<NSCENES; i++)
-		clips[i]->setPlayHead(0.0);
+		clips[i]->resetPlayHead();
 }
 
 void Looper::pitchShift(int count, float* input, float* output)
